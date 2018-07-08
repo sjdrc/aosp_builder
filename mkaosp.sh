@@ -16,20 +16,24 @@ LOCAL_MANIFEST=\
 
 	<remove-project name="platform/external/chromium-webview" />
 	<remove-project name="platform/packages/apps/Browser2" />
-	<remove-project name="platform/packages/apps/QuickSearchBox" />
 	<remove-project name="platform/packages/apps/Calendar" />
+	<remove-project name="platform/packages/apps/QuickSearchBox" />
 	<remove-project name="platform/packages/apps/Camera2" />	
 	<remove-project name="platform/packages/apps/ExactCalculator" />	
 	<remove-project name="platform/packages/apps/Music" />	
 </manifest>'
 
-log() { printf "[$(date "+%Y-%m-%d %H:%M:%S")][LOG]%s\n" "$*"; }
-log_err() { printf "[$(date "+%Y-%m-%d %H:%M:%S")][ERR]%s\n" "$*" >&2; }
-usage() { log_err "Usage: $0 device {setup|build}"; }
+log() { printf "[LOG][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*"; }
+log_err() { printf "[ERR][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*" >&2; }
+usage() { printf "Usage: $0 action device\n\taction: {init|build}\n\tdevice: {sailfish|marlin|walleye|taimen}\n"; }
 fdpe_hash() { keytool -list -printcert -file "$1" | grep 'SHA256:' | tr --delete ':' | cut --delimiter ' ' --fields 3; }
 init_repo() { pushd "${BUILD_DIR}"; repo init -q --manifest-url "${MANIFEST_URL}" --manifest-branch "${AOSP_BRANCH}" --depth 1; popd; }
 sync_repo() { pushd "${BUILD_DIR}";	repo sync -q -c --no-tags --no-clone-bundle --jobs $(nproc); popd; }
 
+########################################
+# Sets up build environment
+# TODO better install for android-sdk
+########################################
 setup_env()
 {
 	log "Setting up environment..."
@@ -50,6 +54,10 @@ setup_env()
 	mkdir -p "${BUILD_DIR}"
 }
 
+########################################
+# Sets up vendor files
+# TODO Marlin kernel, additional devices
+########################################
 init_vendor()
 {
 	log "Setting up vendor files..."
@@ -75,6 +83,10 @@ init_vendor()
 	mv "${BUILD_DIR}/vendor/android-prepare-vendor/${DEVICE}/$(tr '[:upper:]' '[:lower:]' <<< "${AOSP_BUILD}")/vendor/google_devices/${target_device}" "${BUILD_DIR}/vendor/google_devices"
 }
 
+########################################
+# Generate keys used for signing build
+# TODO Add additional devices
+########################################
 gen_keys()
 {
 	log "Generating signing keys..."
@@ -102,10 +114,22 @@ gen_keys()
 	esac
 }
 
-
+########################################
+# Apply custom changes to android sources
+# TODO Use patch.d/*.patch files
+########################################
 apply_patches()
 {
 	log "Patching AOSP sources..."
+	# Remove unwanted apps from build
+	sed -i -e '/webview \\/d' "${BUILD_DIR}/build/make/target/product/core_minimal.mk"
+	sed -i -e '/Browser2/d' "${BUILD_DIR}/build/make/target/product/core.mk"
+	sed -i -e '/Calendar/d' "${BUILD_DIR}/build/make/target/product/core.mk"
+	sed -i -e '/QuickSearchBox/d' "${BUILD_DIR}/build/make/target/product/core.mk"	
+	sed -i -e '/Camera2/d' "${BUILD_DIR}/build/make/target/product/core.mk"	
+	sed -i -e '/ExactCalculator/d' "${BUILD_DIR}/build/make/target/product/core.mk"	
+	sed -i -e '/Music/d' "${BUILD_DIR}/build/make/target/product/core.mk"	
+
 	# Include external apps into build
 	sed -i -e "\$aPRODUCT_PACKAGES += Updater" "${BUILD_DIR}/build/make/target/product/core.mk"
 	sed -i -e "\$aPRODUCT_PACKAGES += F-DroidPrivilegedExtension" "${BUILD_DIR}/build/make/target/product/core.mk"
@@ -115,7 +139,7 @@ apply_patches()
 	# Use Chromium as webview
 	sed -i -e "s/Android WebView/Chromium/" -e "s/com.android.webview/org.chromium.chrome/" ${BUILD_DIR}/frameworks/base/core/res/res/xml/config_webview_packages.xml
 
-	# Fix Updater URL TODO
+	# Fix Updater URL
 	sed -i -e "s@s3bucket@${RELEASE_URL}/@g" "${BUILD_DIR}/packages/apps/Updater/res/values/config.xml"
  
 	# Patch F-Droid
@@ -141,6 +165,10 @@ apply_patches()
 	popd
 }
 
+########################################
+# Run a build on checked out sources
+# TODO use ccache option for builds
+########################################
 build_aosp()
 {
 	log "Building AOSP..."
@@ -154,6 +182,10 @@ build_aosp()
 	popd
 }
 
+########################################
+# Run the full script
+# TODO check bash vars are set
+########################################
 main()
 {
 	ARGC=$#
@@ -170,7 +202,7 @@ main()
 	AOSP_BRANCH="${AOSP_BRANCH:=android-8.1.0_r36}"
 	RELEASE_URL="${RELEASE_URL:=https://aosp.sgp1.digitaloceanspaces.com}"
 	
-	DEVICE=$1
+	DEVICE=$2
 	case "${DEVICE}" in
 		sailfish|marlin|walleye|taimen)
 			# Trigger or mark device specific shit here maybe?
@@ -180,9 +212,9 @@ main()
 			exit 1
 	esac
 
-	ACTION=$2
+	ACTION=$1
 	case "${ACTION}" in
-		setup)
+		init)
 			setup_env
 			log "Cloning repos - this may take a while..."
 			init_repo
@@ -193,12 +225,14 @@ main()
 			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
 			;;
 		build)
+			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
 			sync_repo
 			apply_patches
 			build_aosp
 			;;
 		*)
 			usage
+			exit 1
 	esac
 }
 
