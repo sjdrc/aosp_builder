@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# TODO store this an actual xml file somewhere
 LOCAL_MANIFEST=\
 '<?xml version="1.0" encoding="UTF-8"?>
 <manifest>
