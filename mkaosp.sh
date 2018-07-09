@@ -13,14 +13,6 @@ LOCAL_MANIFEST=\
 	
 	<project path="packages/apps/F-Droid" name="fdroidclient" remote="fdroid" revision="refs/tags/1.2.2" />
 	<project path="packages/apps/F-DroidPrivilegedExtension" name="privileged-extension" remote="fdroid" revision="refs/tags/0.2.8" />
-
-	<remove-project name="platform/external/chromium-webview" />
-	<remove-project name="platform/packages/apps/Browser2" />
-	<remove-project name="platform/packages/apps/Calendar" />
-	<remove-project name="platform/packages/apps/QuickSearchBox" />
-	<remove-project name="platform/packages/apps/Camera2" />	
-	<remove-project name="platform/packages/apps/ExactCalculator" />	
-	<remove-project name="platform/packages/apps/Music" />	
 </manifest>'
 
 log() { printf "[LOG][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*"; }
