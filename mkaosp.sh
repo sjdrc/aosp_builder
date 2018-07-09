@@ -8,7 +8,6 @@ LOCAL_MANIFEST=\
 	<remote name="fdroid" fetch="https://gitlab.com/fdroid/" />
 
 	<project path="script" name="RattlesnakeOS/script" remote="github" revision="master" />
-	<project path="external/chromium" name="RattlesnakeOS/platform_external_chromium" remote="github" revision="master" />
 	<project path="packages/apps/Updater" name="RattlesnakeOS/platform_packages_apps_Updater" remote="github" revision="master" />
 	<project path="vendor/android-prepare-vendor" name="anestisb/android-prepare-vendor" remote="github" revision="master" />
 	
@@ -39,7 +38,7 @@ setup_env()
 {
 	log "Setting up environment..."
 	apt -qq update
-	apt -qq install --yes --no-install-recommends openjdk-8-jdk git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc unzip ccache python-networkx liblz4-tool repo gperf jq wget rsyncfuseext2 bsdmainutils cgpt
+	apt -qq install --yes --no-install-recommends openjdk-8-jdk git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc unzip ccache python-networkx liblz4-tool repo gperf jq wget rsync fuseext2 bsdmainutils cgpt
 	
 	if [ ! -d "/usr/local/android-sdk" ]; then
 		log "Setting up Android SDK..."
@@ -135,7 +134,6 @@ apply_patches()
 	sed -i -e "\$aPRODUCT_PACKAGES += Updater" "${BUILD_DIR}/build/make/target/product/core.mk"
 	sed -i -e "\$aPRODUCT_PACKAGES += F-DroidPrivilegedExtension" "${BUILD_DIR}/build/make/target/product/core.mk"
 	sed -i -e "\$aPRODUCT_PACKAGES += F-Droid" "${BUILD_DIR}/build/make/target/product/core.mk"
-	sed -i -e "\$aPRODUCT_PACKAGES += chromium" "${BUILD_DIR}/build/make/target/product/core.mk"
 
 	# Use Chromium as webview
 	sed -i -e "s/Android WebView/Chromium/" -e "s/com.android.webview/org.chromium.chrome/" ${BUILD_DIR}/frameworks/base/core/res/res/xml/config_webview_packages.xml
