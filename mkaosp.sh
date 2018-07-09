@@ -196,7 +196,8 @@ main()
 	fi
 
 	BUILD_DIR="${BUILD_DIR:=${HOME}/aosp_build}"
-	MANIFEST_URL="${MANIFEST_URL:=https://android.googlesource.com/platform/manifest}"
+	#MANIFEST_URL="${MANIFEST_URL:=https://android.googlesource.com/platform/manifest}"
+	MANIFEST_URL="${MANIFEST_URL:=https://github.com/sjdrc/pixel2-manifest}"
 	AOSP_BUILD="${AOSP_BUILD:=OPM2.171026.006.H1}"
 	AOSP_BRANCH="${AOSP_BRANCH:=android-8.1.0_r36}"
 	RELEASE_URL="${RELEASE_URL:=https://aosp.sgp1.digitaloceanspaces.com}"
