@@ -1,25 +1,59 @@
 #!/bin/bash
 
-# TODO store this an actual xml file somewhere
-LOCAL_MANIFEST=\
-'<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-	<remote name="github" fetch="https://github.com/" />
-	<remote name="fdroid" fetch="https://gitlab.com/fdroid/" />
+# TODO check bash vars are set
+main()
+{
+	ARGC="${#}" && ARGV="${@}"
+	if [ ${ARGC} -ne 2 ]; then usage exit 1; fi
 
-	<project path="script" name="RattlesnakeOS/script" remote="github" revision="master" />
-	<project path="packages/apps/Updater" name="RattlesnakeOS/platform_packages_apps_Updater" remote="github" revision="master" />
-	<project path="vendor/android-prepare-vendor" name="anestisb/android-prepare-vendor" remote="github" revision="master" />
+	# Set variables
+	OTA_URL=https://aosp.sgp1.digitaloceanspaces.com
+	BUILD_DIR="${BUILD_DIR:=/root/aosp_build}"
 	
-	<project path="packages/apps/F-Droid" name="fdroidclient" remote="fdroid" revision="refs/tags/1.2.2" />
-	<project path="packages/apps/F-DroidPrivilegedExtension" name="privileged-extension" remote="fdroid" revision="refs/tags/0.2.8" />
-</manifest>'
+	# Check device
+	DEVICE=$2
+	case "${DEVICE}" in
+		sailfish|marlin|walleye|taimen)
+			# Trigger or mark device specific shit here maybe?
+			;;
+		*)
+			log_err "Unsupported device ${DEVICE}"
+			exit 1
+	esac
+
+	# Run action
+	ACTION=$1
+	case "${ACTION}" in
+		init)
+			if [ -z ${AOSP_BUILD} ] || [ -z ${AOSP_BRANCH} ]; then log_err "AOSP_BUILD and AOSP_BRANCH must be set for init!"; exit 1; fi
+			setup_env
+			log "Cloning repos - this may take a while..."
+			init_repo
+			mkdir -p "${BUILD_DIR}/.repo/local_manifests"
+			echo "${LOCAL_MANIFEST}" > "${BUILD_DIR}/.repo/local_manifests/rattlesnake-os.xml"
+			sync_repo
+			init_vendor
+			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
+			;;
+		build)
+			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
+			sync_repo
+			apply_patches
+			build_aosp
+			;;
+		*)
+			usage
+			exit 1
+	esac
+}
+
+>>>>>>> 78e6facac4111819735f38ed7a02c9d3c031e85c
 
 log() { printf "[LOG][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*"; }
 log_err() { printf "[ERR][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*" >&2; }
 usage() { printf "Usage: $0 action device\n\taction: {init|build}\n\tdevice: {sailfish|marlin|walleye|taimen}\n"; }
 fdpe_hash() { keytool -list -printcert -file "$1" | grep 'SHA256:' | tr --delete ':' | cut --delimiter ' ' --fields 3; }
-init_repo() { pushd "${BUILD_DIR}"; repo init -q --manifest-url "${MANIFEST_URL}" --manifest-branch "${AOSP_BRANCH}" --depth 1; popd; }
+init_repo() { pushd "${BUILD_DIR}"; repo init -q --manifest-url 'https://android.googlesource.com/platform/manifest' --manifest-branch "${AOSP_BRANCH}" --depth 1; popd; }
 sync_repo() { pushd "${BUILD_DIR}";	repo sync -q -c --no-tags --no-clone-bundle --jobs $(nproc); popd; }
 
 ########################################
@@ -53,9 +87,6 @@ setup_env()
 init_vendor()
 {
 	log "Setting up vendor files..."
-	sed -i -e "s/USE_DEBUGFS=true/USE_DEBUGFS=false/" -e "s/# SYS_TOOLS/SYS_TOOLS/" -e "s/# _UMOUNT=/_UMOUNT=/" "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh"
-	bash -x "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh" --yes --device "${DEVICE}" --buildID "${AOSP_BUILD}" --output "${BUILD_DIR}/vendor/android-prepare-vendor"
-	mkdir -p "${BUILD_DIR}/vendor/google_devices"
 	target_device=
 	case "${DEVICE}" in
 		marlin|taimen)
@@ -71,8 +102,12 @@ init_vendor()
 			log_err "Somehow setup_vendor has been given an invalid device of: ${DEVICE}. This shouldn't have happened"
 			exit 1
 	esac
-	rm -rf "${BUILD_DIR}/vendor/google_devices/${target_device}"
-	mv "${BUILD_DIR}/vendor/android-prepare-vendor/${DEVICE}/$(tr '[:upper:]' '[:lower:]' <<< "${AOSP_BUILD}")/vendor/google_devices/${target_device}" "${BUILD_DIR}/vendor/google_devices"
+	if [ ! -d "${BUILD_DIR}/vendor/google_devices/${target_device}" ]; then
+		mkdir -p "${BUILD_DIR}/vendor/google_devices"
+		sed -i -e "s/USE_DEBUGFS=true/USE_DEBUGFS=false/" -e "s/# SYS_TOOLS/SYS_TOOLS/" -e "s/# _UMOUNT=/_UMOUNT=/" "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh"
+		bash "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh" --yes --device "${DEVICE}" --buildID "${AOSP_BUILD}" --output "${BUILD_DIR}/vendor/android-prepare-vendor"
+		mv "${BUILD_DIR}/vendor/android-prepare-vendor/${DEVICE}/$(tr '[:upper:]' '[:lower:]' <<< "${AOSP_BUILD}")/vendor/google_devices/${target_device}" "${BUILD_DIR}/vendor/google_devices"
+	fi
 }
 
 ########################################
@@ -103,6 +138,7 @@ gen_keys()
 			;;
 		*)
 			log_err "Somehow gen_keys has been given an invalid device of: ${DEVICE}. This shouldn't have happened"
+			exit 1
 	esac
 }
 
@@ -131,7 +167,7 @@ apply_patches()
 	sed -i -e "s/Android WebView/Chromium/" -e "s/com.android.webview/org.chromium.chrome/" ${BUILD_DIR}/frameworks/base/core/res/res/xml/config_webview_packages.xml
 
 	# Fix Updater URL
-	sed -i -e "s@s3bucket@${RELEASE_URL}/@g" "${BUILD_DIR}/packages/apps/Updater/res/values/config.xml"
+	sed -i -e "s@s3bucket@${OTA_URL}/@g" "${BUILD_DIR}/packages/apps/Updater/res/values/config.xml"
  
 	# Patch F-Droid
 	yes | /usr/local/android-sdk/tools/bin/sdkmanager --licenses
@@ -173,60 +209,27 @@ build_aosp()
 	popd
 }
 
-########################################
-# Run the full script
-# TODO check bash vars are set
-########################################
-main()
-{
-	ARGC=$#
-	ARGV="$@"
+# TODO store this an actual xml file somewhere
+LOCAL_MANIFEST=\
+'<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+	<remote name="github" fetch="https://github.com/" />
+	<remote name="fdroid" fetch="https://gitlab.com/fdroid/" />
 
-	if [ ${ARGC} -ne 2 ]; then
-		usage
-		exit 1
-	fi
-
-	BUILD_DIR="${BUILD_DIR:=${HOME}/aosp_build}"
-	#MANIFEST_URL="${MANIFEST_URL:=https://android.googlesource.com/platform/manifest}"
-	MANIFEST_URL="${MANIFEST_URL:=https://github.com/sjdrc/pixel2-manifest}"
-	AOSP_BUILD="${AOSP_BUILD:=OPM2.171026.006.H1}"
-	AOSP_BRANCH="${AOSP_BRANCH:=android-8.1.0_r36}"
-	RELEASE_URL="${RELEASE_URL:=https://aosp.sgp1.digitaloceanspaces.com}"
+	<project path="script" name="RattlesnakeOS/script" remote="github" revision="master" />
+	<project path="packages/apps/Updater" name="RattlesnakeOS/platform_packages_apps_Updater" remote="github" revision="master" />
+	<project path="vendor/android-prepare-vendor" name="anestisb/android-prepare-vendor" remote="github" revision="master" />
 	
-	DEVICE=$2
-	case "${DEVICE}" in
-		sailfish|marlin|walleye|taimen)
-			# Trigger or mark device specific shit here maybe?
-			;;
-		*)
-			log_err "Unsupported device ${DEVICE}"
-			exit 1
-	esac
+	<project path="packages/apps/F-Droid" name="fdroidclient" remote="fdroid" revision="refs/tags/1.2.2" />
+	<project path="packages/apps/F-DroidPrivilegedExtension" name="privileged-extension" remote="fdroid" revision="refs/tags/0.2.8" />
 
-	ACTION=$1
-	case "${ACTION}" in
-		init)
-			setup_env
-			log "Cloning repos - this may take a while..."
-			init_repo
-			mkdir -p "${BUILD_DIR}/.repo/local_manifests"
-			echo "${LOCAL_MANIFEST}" > "${BUILD_DIR}/.repo/local_manifests/rattlesnake-os.xml"
-			sync_repo
-			init_vendor
-			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
-			;;
-		build)
-			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
-			sync_repo
-			apply_patches
-			build_aosp
-			;;
-		*)
-			usage
-			exit 1
-	esac
-}
+ 	<remove-project name="platform/packages/apps/Browser2" />
+ 	<remove-project name="platform/packages/apps/Calendar" />
+ 	<remove-project name="platform/packages/apps/QuickSearchBox" />
+ 	<remove-project name="platform/packages/apps/Camera2" />
+ 	<remove-project name="platform/packages/apps/ExactCalculator" />
+ 	<remove-project name="platform/packages/apps/Music" />
+</manifest>'
 
 set -e
-main "$@"
+main "${@}"
