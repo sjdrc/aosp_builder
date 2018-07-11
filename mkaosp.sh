@@ -1,26 +1,52 @@
 #!/bin/bash
 
-# TODO store this an actual xml file somewhere
-LOCAL_MANIFEST=\
-'<?xml version="1.0" encoding="UTF-8"?>
-<manifest>
-	<remote name="github" fetch="https://github.com/" />
-	<remote name="fdroid" fetch="https://gitlab.com/fdroid/" />
+# TODO check bash vars are set
+main()
+{
+	ARGC="${#}" && ARGV="${@}"
+	if [ ${ARGC} -ne 2 ]; then usage exit 1; fi
 
-	<project path="script" name="RattlesnakeOS/script" remote="github" revision="master" />
-	<project path="packages/apps/Updater" name="RattlesnakeOS/platform_packages_apps_Updater" remote="github" revision="master" />
-	<project path="vendor/android-prepare-vendor" name="anestisb/android-prepare-vendor" remote="github" revision="master" />
+	# Set variables
+	OTA_URL=https://aosp.sgp1.digitaloceanspaces.com
+	BUILD_DIR="${BUILD_DIR:=/root/aosp_build}"
 	
-	<project path="packages/apps/F-Droid" name="fdroidclient" remote="fdroid" revision="refs/tags/1.2.2" />
-	<project path="packages/apps/F-DroidPrivilegedExtension" name="privileged-extension" remote="fdroid" revision="refs/tags/0.2.8" />
+	# Check device
+	DEVICE=$2
+	case "${DEVICE}" in
+		sailfish|marlin|walleye|taimen)
+			# Trigger or mark device specific shit here maybe?
+			;;
+		*)
+			log_err "Unsupported device ${DEVICE}"
+			exit 1
+	esac
 
- 	<remove-project name="platform/packages/apps/Browser2" />
- 	<remove-project name="platform/packages/apps/Calendar" />
- 	<remove-project name="platform/packages/apps/QuickSearchBox" />
- 	<remove-project name="platform/packages/apps/Camera2" />
- 	<remove-project name="platform/packages/apps/ExactCalculator" />
- 	<remove-project name="platform/packages/apps/Music" />
-</manifest>'
+	# Run action
+	ACTION=$1
+	case "${ACTION}" in
+		init)
+			if [ -z ${AOSP_BUILD} ] || [ -z ${AOSP_BRANCH} ]; then log_err "AOSP_BUILD and AOSP_BRANCH must be set for init!"; exit 1; fi
+			setup_env
+			log "Cloning repos - this may take a while..."
+			init_repo
+			mkdir -p "${BUILD_DIR}/.repo/local_manifests"
+			echo "${LOCAL_MANIFEST}" > "${BUILD_DIR}/.repo/local_manifests/rattlesnake-os.xml"
+			sync_repo
+			init_vendor
+			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
+			;;
+		build)
+			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
+			sync_repo
+			apply_patches
+			build_aosp
+			;;
+		*)
+			usage
+			exit 1
+	esac
+}
+
 
 log() { printf "[LOG][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*"; }
 log_err() { printf "[ERR][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*" >&2; }
@@ -111,6 +137,7 @@ gen_keys()
 			;;
 		*)
 			log_err "Somehow gen_keys has been given an invalid device of: ${DEVICE}. This shouldn't have happened"
+			exit 1
 	esac
 }
 
@@ -181,55 +208,27 @@ build_aosp()
 	popd
 }
 
-########################################
-# Run the full script
-# TODO check bash vars are set
-########################################
-main()
-{
-	ARGC=$#
-	ARGV="$@"
-	if [ ${ARGC} -ne 2 ]; then
-		usage
-		exit 1
-	fi
-	
-	OTA_URL=https://aosp.sgp1.digitaloceanspaces.com
-	BUILD_DIR="${BUILD_DIR:=/root/aosp_build}"
-	
-	DEVICE=$2
-	case "${DEVICE}" in
-		sailfish|marlin|walleye|taimen)
-			# Trigger or mark device specific shit here maybe?
-			;;
-		*)
-			log_err "Unsupported device ${DEVICE}"
-			exit 1
-	esac
+# TODO store this an actual xml file somewhere
+LOCAL_MANIFEST=\
+'<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+	<remote name="github" fetch="https://github.com/" />
+	<remote name="fdroid" fetch="https://gitlab.com/fdroid/" />
 
-	ACTION=$1
-	case "${ACTION}" in
-		init)
-			if [ -z ${AOSP_BUILD} ] || [ -z ${AOSP_BRANCH} ]; then echo "AOSP_BUILD and AOSP_BRANCH must be set for init!"; exit 1; fi
-			setup_env
-			log "Cloning repos - this may take a while..."
-			init_repo
-			mkdir -p "${BUILD_DIR}/.repo/local_manifests"
-			echo "${LOCAL_MANIFEST}" > "${BUILD_DIR}/.repo/local_manifests/rattlesnake-os.xml"
-			init_vendor
-			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
-			;;
-		build)
-			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
-			sync_repo
-			apply_patches
-			build_aosp
-			;;
-		*)
-			usage
-			exit 1
-	esac
-}
+	<project path="script" name="RattlesnakeOS/script" remote="github" revision="master" />
+	<project path="packages/apps/Updater" name="RattlesnakeOS/platform_packages_apps_Updater" remote="github" revision="master" />
+	<project path="vendor/android-prepare-vendor" name="anestisb/android-prepare-vendor" remote="github" revision="master" />
+	
+	<project path="packages/apps/F-Droid" name="fdroidclient" remote="fdroid" revision="refs/tags/1.2.2" />
+	<project path="packages/apps/F-DroidPrivilegedExtension" name="privileged-extension" remote="fdroid" revision="refs/tags/0.2.8" />
+
+ 	<remove-project name="platform/packages/apps/Browser2" />
+ 	<remove-project name="platform/packages/apps/Calendar" />
+ 	<remove-project name="platform/packages/apps/QuickSearchBox" />
+ 	<remove-project name="platform/packages/apps/Camera2" />
+ 	<remove-project name="platform/packages/apps/ExactCalculator" />
+ 	<remove-project name="platform/packages/apps/Music" />
+</manifest>'
 
 set -e
-main "$@"
+main "${@}"
