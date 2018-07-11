@@ -10,6 +10,7 @@ main()
 	DEVICE=taimen
 	RELEASE_BUCKET=aosp
 	ANDROID_VERSION=8.1.0
+	BUILD_DIR=/root/aosp_build
 	AOSP_BUILD=$(curl -s https://developers.google.com/android/images | grep -A1 "${DEVICE}" | egrep '[a-zA-Z]+ [0-9]{4}\)' | grep "${ANDROID_VERSION}" | tail -1 | cut -d"(" -f2 | cut -d"," -f1)
 	AOSP_BRANCH=$(curl -s https://source.android.com/setup/start/build-numbers | grep -A1 "${AOSP_BUILD}" | tail -1 | cut -f2 -d">"|cut -f1 -d"<")	
 	
@@ -17,7 +18,7 @@ main()
 	ACTION="${1}"
 	case "${ACTION}" in
 		init)
-			apt update && apt install --yes --no-install-recommends systemd-container fuse s3cmd
+			apt update && apt install --yes --no-install-recommends systemd-container fuse s3cmd unzip
 			if [ ! -d "${CHROOT_DIR}" ]; then mkchroot; fi
 			;;
 		build)
@@ -69,12 +70,13 @@ digitalocean_release()
 	build_timestamp="$(unzip -p "release-${DEVICE}-${build_date}/${DEVICE}-ota_update-${build_date}.zip" META-INF/com/android/metadata | grep 'post-timestamp' | cut --delimiter "=" --fields 2)"
 	
 	# Remove old ota
-	old_metadata="$(s3cmd get --no-progress s3://sjdrc/taimen-stable -)"
+	old_metadata="$(s3cmd get --no-progress s3://${RELEASE_BUCKET}/taimen-stable -)"
 	old_date="$(cut -d ' ' -f 1 <<< "${old_metadata}")"
-	s3cmd rm "s3://${RELEASE_BUCKET}/${DEVICE}-ota_update-${old_date}.zip" || true
+	if [ ! -z "${old_date}" ]; then s3cmd rm "s3://${RELEASE_BUCKET}/${DEVICE}-ota_update-${old_date}.zip"; fi
 
 	# Upload new metadata and ota
 	echo "${build_date} ${build_timestamp} ${AOSP_BUILD}" | s3cmd put - "s3://${RELEASE_BUCKET}/${DEVICE}-stable" --acl-public
+	echo "${AOSP_BUILD}" | s3cmd put - "s3://${RELEASE_BUCKET}/${DEVICE}-vendor" --acl-public
 	echo "${BUILD_TRUE_TIMESTAMP}" | s3cmd put - "s3://${RELEASE_BUCKET}/${DEVICE}-stable-true-timestamp" --acl-public
 	s3cmd put "${CHROOT_DIR}/${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-ota_update-${build_date}.zip" "s3://${RELEASE_BUCKET}" --acl-public
     s3cmd put "${CHROOT_DIR}/${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-factory-${build_date}.tar.xz" "s3://${RELEASE_BUCKET}/${DEVICE}-factory-latest.tar.xz" --acl-private
