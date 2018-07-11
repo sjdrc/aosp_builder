@@ -64,7 +64,7 @@ digitalocean_backup_keys()
 
 digitalocean_release()
 {
-	pushd "${BUILD_DIR}/out"
+	pushd "${CHROOT_DIR}/${BUILD_DIR}/out"
 	build_date="$(< build_number.txt)"
 	build_timestamp="$(unzip -p "release-${DEVICE}-${build_date}/${DEVICE}-ota_update-${build_date}.zip" META-INF/com/android/metadata | grep 'post-timestamp' | cut --delimiter "=" --fields 2)"
 	
@@ -76,8 +76,8 @@ digitalocean_release()
 	# Upload new metadata and ota
 	echo "${build_date} ${build_timestamp} ${AOSP_BUILD}" | s3cmd put - "s3://${RELEASE_BUCKET}/${DEVICE}-stable" --acl-public
 	echo "${BUILD_TRUE_TIMESTAMP}" | s3cmd put - "s3://${RELEASE_BUCKET}/${DEVICE}-stable-true-timestamp" --acl-public
-	s3cmd put "${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-ota_update-${build_date}.zip" "s3://${RELEASE_BUCKET}" --acl-public
-    s3cmd put "${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-factory-${build_date}.tar.xz" "s3://${RELEASE_BUCKET}/${DEVICE}-factory-latest.tar.xz" --acl-private
+	s3cmd put "${CHROOT_DIR}/${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-ota_update-${build_date}.zip" "s3://${RELEASE_BUCKET}" --acl-public
+    s3cmd put "${CHROOT_DIR}/${BUILD_DIR}/out/release-${DEVICE}-${build_date}/${DEVICE}-factory-${build_date}.tar.xz" "s3://${RELEASE_BUCKET}/${DEVICE}-factory-latest.tar.xz" --acl-private
 }
 
-main
+main "${@}"
