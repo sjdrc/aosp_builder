@@ -28,16 +28,16 @@ main()
 			if [ -z ${AOSP_BUILD} ] || [ -z ${AOSP_BRANCH} ]; then log_err "AOSP_BUILD and AOSP_BRANCH must be set for init!"; exit 1; fi
 			setup_env
 			log "Cloning repos - this may take a while..."
-			init_repo
+			repo_init
 			mkdir -p "${BUILD_DIR}/.repo/local_manifests"
 			echo "${LOCAL_MANIFEST}" > "${BUILD_DIR}/.repo/local_manifests/rattlesnake-os.xml"
-			sync_repo
+			repo_sync
 			init_vendor
 			if [ ! -d "${BUILD_DIR}/keys/${DEVICE}" ]; then	gen_keys; fi
 			;;
 		build)
 			if [ ! -d "${BUILD_DIR}/.repo" ]; then log_err "Call init first!"; exit 1; fi
-			sync_repo
+			repo_sync
 			apply_patches
 			build_aosp
 			;;
@@ -47,14 +47,12 @@ main()
 	esac
 }
 
->>>>>>> 78e6facac4111819735f38ed7a02c9d3c031e85c
-
 log() { printf "[LOG][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*"; }
 log_err() { printf "[ERR][$(date "+%Y-%m-%d %H:%M:%S")] %s\n" "$*" >&2; }
 usage() { printf "Usage: $0 action device\n\taction: {init|build}\n\tdevice: {sailfish|marlin|walleye|taimen}\n"; }
 fdpe_hash() { keytool -list -printcert -file "$1" | grep 'SHA256:' | tr --delete ':' | cut --delimiter ' ' --fields 3; }
-init_repo() { pushd "${BUILD_DIR}"; repo init -q --manifest-url 'https://android.googlesource.com/platform/manifest' --manifest-branch "${AOSP_BRANCH}" --depth 1; popd; }
-sync_repo() { pushd "${BUILD_DIR}";	repo sync -q -c --no-tags --no-clone-bundle --jobs $(nproc); popd; }
+repo_init() { pushd "${BUILD_DIR}"; repo init -q --manifest-url 'https://android.googlesource.com/platform/manifest' --manifest-branch "${AOSP_BRANCH}" --depth 1; popd; }
+repo_sync() { pushd "${BUILD_DIR}";	repo sync -q -c --no-tags --no-clone-bundle --jobs $(nproc); popd; }
 
 ########################################
 # Sets up build environment
@@ -86,28 +84,11 @@ setup_env()
 ########################################
 init_vendor()
 {
-	log "Setting up vendor files..."
-	target_device=
-	case "${DEVICE}" in
-		marlin|taimen)
-			target_device="${DEVICE}"
-			;;
-		sailfish)
-			target_device='marlin'
-			;;
-		walleye)
-			target_device='muskie'
-			;;
-		*)
-			log_err "Somehow setup_vendor has been given an invalid device of: ${DEVICE}. This shouldn't have happened"
-			exit 1
-	esac
-	if [ ! -d "${BUILD_DIR}/vendor/google_devices/${target_device}" ]; then
-		mkdir -p "${BUILD_DIR}/vendor/google_devices"
-		sed -i -e "s/USE_DEBUGFS=true/USE_DEBUGFS=false/" -e "s/# SYS_TOOLS/SYS_TOOLS/" -e "s/# _UMOUNT=/_UMOUNT=/" "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh"
-		bash "${BUILD_DIR}/vendor/android-prepare-vendor/execute-all.sh" --yes --device "${DEVICE}" --buildID "${AOSP_BUILD}" --output "${BUILD_DIR}/vendor/android-prepare-vendor"
-		mv "${BUILD_DIR}/vendor/android-prepare-vendor/${DEVICE}/$(tr '[:upper:]' '[:lower:]' <<< "${AOSP_BUILD}")/vendor/google_devices/${target_device}" "${BUILD_DIR}/vendor/google_devices"
-	fi
+	log 'Setting up vendor files...'
+	pushd "${BUILD_DIR}"
+	mkdir -p vendor/google_devices
+	sed -i -e "s/USE_DEBUGFS=true/USE_DEBUGFS=false/" -e "s/# SYS_TOOLS/SYS_TOOLS/" -e "s/# _UMOUNT=/_UMOUNT=/" vendor/android-prepare-vendor/execute-all.sh
+	vendor/android-prepare-vendor/execute-all.sh -d "${DEVICE}" -b "${BUILD_ID}" -o "vendor/google_devices"
 }
 
 ########################################
@@ -117,29 +98,15 @@ init_vendor()
 gen_keys()
 {
 	log "Generating signing keys..."
-	mkdir --parents "${BUILD_DIR}/keys/${DEVICE}"
+	mkdir -p "${BUILD_DIR}/keys/${DEVICE}"
 	pushd "${BUILD_DIR}/keys/${DEVICE}"
 	for key in {releasekey,platform,shared,media,verity} ; do
 		# make_key exits with unsuccessful code 1 instead of 0, need ! to negate
 		! "${BUILD_DIR}/development/tools/make_key" "${key}" '/CN=RattlesnakeOS'
 	done
+	openssl genrsa -out avb.pem 2048
+	"${BUILD_DIR}/external/avb/avbtool" extract_public_key --key avb.pem --output avb_pkmd.bin
 	popd
-
-	case "${DEVICE}" in
-		marlin|sailfish)
-			make -j 20 generate_verity_key
-			"${BUILD_DIR}/out/host/linux-x86/bin/generate_verity_key" -convert "${BUILD_DIR}/keys/${DEVICE}/verity.x509.pem" "${BUILD_DIR}/keys/${DEVICE}/verity_key"
-			make clobber
-			openssl x509 -outform der -in "${BUILD_DIR}/keys/${DEVICE}/verity.x509.pem" -out "${BUILD_DIR}/keys/${DEVICE}/verity_user.der.x509"
-			;;
-		walleye|taimen)
-			openssl genrsa -out "${BUILD_DIR}/keys/${DEVICE}/avb.pem" 2048
-			"${BUILD_DIR}/external/avb/avbtool" extract_public_key --key "${BUILD_DIR}/keys/${DEVICE}/avb.pem" --output "${BUILD_DIR}/keys/${DEVICE}/avb_pkmd.bin"
-			;;
-		*)
-			log_err "Somehow gen_keys has been given an invalid device of: ${DEVICE}. This shouldn't have happened"
-			exit 1
-	esac
 }
 
 ########################################
@@ -198,14 +165,18 @@ apply_patches()
 ########################################
 build_aosp()
 {
-	log "Building AOSP..."
-	yes | /usr/local/android-sdk/tools/bin/sdkmanager --licenses
+	log 'Building AOSP...'
 	pushd "${BUILD_DIR}"
-	source "${BUILD_DIR}/script/setup.sh"
-	choosecombo "release" "aosp_${DEVICE}" "user"
-	make -j $(nproc) target-files-package
-	make -j $(nproc) brillo_update_payload
-	"${BUILD_DIR}/script/release.sh" "$DEVICE"
+	source script/setup.sh
+	choosecombo release "aosp_${DEVICE}" user
+	setup_vendor
+	gen_keys
+	make -j$(nproc) target-files-package
+	make -j$(nproc) brillo_update_payload
+	script/release.sh "${DEVICE}"
+	popd
+	pushd "${BUILD_DIR}/out"
+	script/generate_metadata.py "${DEVICE}-ota_update-${BUILD}.zip"
 	popd
 }
 

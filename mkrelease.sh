@@ -3,7 +3,7 @@
 main()
 {
 	ARGC="${#}" && ARGV="${@}"
-	if [ ${ARGC} -ne 1 ]; then usage exit 1; fi
+	if [ ${ARGC} -ne 1 ]; then usage_exit; fi
 	
 	# Set variables
 	CHROOT_DIR=chroot
@@ -30,9 +30,13 @@ main()
 			digitalocean_release
 			;;
 		*)
-			usage
-			exit 1
+			usage_exit
 	esac
+}
+
+usage_exit()
+{
+	exit 1
 }
 
 mkchroot()
@@ -51,7 +55,7 @@ digitalocean_get_keys()
 {
 	if [ "$(s3cmd ls s3://${RELEASE_BUCKET}/keys/${DEVICE} | wc -l)" -ne 0 ] && [ ! -d "${CHROOT_DIR}/${BUILD_DIR}/keys/${DEVICE}" ]; then
 		echo "Fetching build keys from s3..."
-		s3cmd get --recursive "s3://${RELEASE_BUCKET}/keys/${DEVICE}" "${CHROOT_DIR}/${BUILD_DIR}/keys/${DEVICE}"
+		s3cmd get --recursive "s3://${RELEASE_BUCKET}/keys/${DEVICE}" "${CHROOT_DIR}/${BUILD_DIR}/keys/"
 	fi
 }
 
@@ -59,7 +63,7 @@ digitalocean_backup_keys()
 {
 	if [ "$(s3cmd ls s3://${RELEASE_BUCKET}/keys/${DEVICE} | wc -l)" -eq 0 ] && [ -d "${CHROOT_DIR}/${BUILD_DIR}/keys/${DEVICE}" ]; then
 		echo "Pushing build keys to s3..."
-		s3cmd put --recursive "${CHROOT_DIR}/${BUILD_DIR}/keys/${DEVICE}" "s3://${RELEASE_BUCKET}/keys/${DEVICE}"
+		s3cmd put --recursive "${CHROOT_DIR}/${BUILD_DIR}/keys/${DEVICE}" "s3://${RELEASE_BUCKET}/keys/"
 	fi
 }
 
